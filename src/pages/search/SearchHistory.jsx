@@ -19,22 +19,26 @@ export function SearchHistory() {
     }
   }, [currentUser]);
 
-  const loadHistory = () => {
-    setLogs(searchService.getSearchHistory(currentUser.email));
+  const loadHistory = async () => {
+    const list = await searchService.getSearchHistory(currentUser.email);
+    setLogs(list);
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (window.confirm("Are you sure you want to clear your entire search query log history? This action is permanent.")) {
-      searchService.clearSearchHistory(currentUser.email);
+      // Loop delete for simplicity or clear
+      for (const log of logs) {
+        await searchService.deleteSearchHistoryItem(currentUser.email, log.id);
+      }
       setLogs([]);
     }
   };
 
-  const handleDeleteSingle = (logId, e) => {
+  const handleDeleteSingle = async (logId, e) => {
     e.stopPropagation();
     if (window.confirm("Delete this search record from your archives?")) {
-      searchService.deleteSearchHistoryItem(currentUser.email, logId);
-      loadHistory();
+      await searchService.deleteSearchHistoryItem(currentUser.email, logId);
+      await loadHistory();
     }
   };
 
@@ -50,7 +54,7 @@ export function SearchHistory() {
         <div>
           <h2 style={{ fontSize: "1.75rem", color: "#fff", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <History size={24} style={{ color: "var(--accent-purple)" }} />
-            MODULE 14: Search History Archives
+            Search History Archives
           </h2>
           <p style={{ color: "var(--text-secondary)" }}>
             Review past invention queries, re-run vector matches, or delete individual search records.

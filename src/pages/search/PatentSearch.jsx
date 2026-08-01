@@ -35,15 +35,42 @@ export function PatentSearch() {
   const [comparePatent, setComparePatent] = useState(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
 
+  const openDetails = (patent) => {
+    setSelectedPatent(patent);
+    setIsDetailsOpen(true);
+  };
+
+  const openCompare = (patent) => {
+    setComparePatent(patent);
+    setIsCompareOpen(true);
+  };
+
   useEffect(() => {
-    if (currentUser) {
-      setSavedIds(searchService.getSavedPatents(currentUser.email).map(p => p.id));
+    async function initPage() {
+      if (currentUser) {
+        const saved = await searchService.getSavedPatentIds(currentUser.email);
+        setSavedIds(saved);
+      }
+      setResults([]);
+      setSearched(false);
     }
+    initPage();
   }, [currentUser]);
 
-  const handleSearch = (e) => {
+  const handleThresholdChange = (e) => {
+    const val = parseInt(e.target.value, 10);
+    setThreshold(val);
+    localStorage.setItem("patent_search_threshold", val.toString());
+  };
+
+  const handleSearch = async (e) => {
     if (e) e.preventDefault();
-    if (!query.trim()) return;
+    
+    if (!query.trim()) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
 
     // Build mock invention model from search keywords to pass to similarity engine
     const searchInvention = {
@@ -54,7 +81,7 @@ export function PatentSearch() {
       functions: query.split(/\s+/).filter(w => w.length > 5)
     };
 
-    const hits = searchService.searchPatents(searchInvention, threshold);
+    const hits = await searchService.searchPatents(searchInvention, threshold);
     
     // Filter results if classification domain is pinned
     const filteredHits = selectedClassification === "All" 
@@ -63,23 +90,13 @@ export function PatentSearch() {
 
     setResults(filteredHits);
     setSearched(true);
-
-    // Save search log
-    if (currentUser) {
-      searchService.addSearchHistory(
-        currentUser.email,
-        searchInvention,
-        filteredHits.length,
-        filteredHits[0] ? filteredHits[0].similarity.overallScore : 0,
-        currentUser.name
-      );
-    }
   };
 
-  const handleToggleSave = (patentId) => {
+  const handleToggleSave = async (patentId) => {
     if (currentUser) {
-      searchService.toggleSavePatent(currentUser.email, patentId);
-      setSavedIds(searchService.getSavedPatents(currentUser.email).map(p => p.id));
+      await searchService.toggleSavePatent(currentUser.email, patentId);
+      const saved = await searchService.getSavedPatentIds(currentUser.email);
+      setSavedIds(saved);
     }
   };
 
@@ -176,7 +193,7 @@ export function PatentSearch() {
                   max="60"
                   step="5"
                   value={threshold}
-                  onChange={(e) => setThreshold(parseInt(e.target.value, 10))}
+                  onChange={handleThresholdChange}
                   style={{ width: "100%", accentColor: "var(--accent-purple)" }}
                 />
               </div>

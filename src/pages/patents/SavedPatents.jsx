@@ -19,10 +19,8 @@ export function SavedPatents() {
   const [comparePatent, setComparePatent] = useState(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
 
-  const loadSavedPatents = useCallback(() => {
-    const list = searchService.getSavedPatents(currentUser.email);
-    // Since these are bookmarked directly without a pending query context, 
-    // we attach a mock query similarity score of 0% so the card compiles successfully.
+  const loadSavedPatents = useCallback(async () => {
+    const list = await searchService.getSavedPatents(currentUser.email);
     const mapped = list.map(p => ({
       ...p,
       similarity: p.similarity || { overallScore: 0, textScore: 0, componentScore: 0, functionScore: 0 }
@@ -36,10 +34,10 @@ export function SavedPatents() {
     }
   }, [currentUser, loadSavedPatents]);
 
-  const handleToggleSave = (patentId) => {
+  const handleToggleSave = async (patentId) => {
     if (currentUser) {
-      searchService.toggleSavePatent(currentUser.email, patentId);
-      loadSavedPatents();
+      await searchService.toggleSavePatent(currentUser.email, patentId);
+      await loadSavedPatents();
     }
   };
 

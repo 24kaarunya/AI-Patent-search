@@ -11,14 +11,28 @@ export function AdminDashboard() {
   const [allUsers, setAllUsers] = useState([]);
 
   useEffect(() => {
-    const users = authService.getAllUsers();
-    // Fetch search history size per user for context
-    const withStats = users.map(u => ({
-      ...u,
-      searchCount: searchService.getSearchHistory(u.email).length,
-      status: u.status || "Active"
-    }));
-    setAllUsers(withStats);
+    async function loadData() {
+      try {
+        const users = await authService.getAllUsers();
+        const withStats = await Promise.all(users.map(async u => {
+          let historyList = [];
+          try {
+            historyList = await searchService.getSearchHistory(u.email);
+          } catch (e) {
+            historyList = [];
+          }
+          return {
+            ...u,
+            searchCount: historyList.length,
+            status: u.status || "Active"
+          };
+        }));
+        setAllUsers(withStats);
+      } catch (err) {
+        console.error("Failed to load admin stats:", err);
+      }
+    }
+    loadData();
   }, []);
 
   const regularUsers = allUsers.filter(u => u.role !== "Admin");

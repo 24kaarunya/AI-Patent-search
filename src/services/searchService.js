@@ -1,168 +1,185 @@
-import { initialPatents } from "../data/patentData";
-import { calculateOverallSimilarity, generateDenseEmbedding } from "../utils/similarity";
-
-const CUSTOM_PATENTS_KEY = "patent_assistant_custom_patents";
-const SEARCH_HISTORY_KEY = "patent_assistant_search_history";
-const SAVED_PATENTS_KEY = "patent_assistant_saved_patents";
-
-function getActivePatents() {
-  const customPatents = localStorage.getItem(CUSTOM_PATENTS_KEY);
-  if (!customPatents) {
-    localStorage.setItem(CUSTOM_PATENTS_KEY, JSON.stringify(initialPatents));
-    return initialPatents;
-  }
-  return JSON.parse(customPatents);
-}
+const API_BASE = window.location.origin.includes("localhost:5173") ? "http://localhost:5000/api/invention" : "/api/invention";
 
 export const searchService = {
-  /**
-   * MODULE 7: Hybrid Vector + Keyword Semantic Search (ChromaDB / FAISS simulation)
-   */
-  searchPatents(invention, thresholdScore = 15) {
-    const allPatents = getActivePatents();
-    
-    // Generate invention embedding snippet for inspector
-    const invText = `${invention.title} ${invention.description}`;
-    const invVector = generateDenseEmbedding(invText);
-    const vectorSnippet = `[${invVector.slice(0, 4).join(", ")}, ...] (384-dim Sentence Transformer)`;
+  // Modular vector search
+  async searchPatents(invention, thresholdScore = 15) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/search-db`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          query: invention.title || invention.description,
+          threshold: thresholdScore,
+          domain: invention.domain
+        })
+      });
+      
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      console.error("Failed to query vector search from backend:", e);
+      return [];
+    }
+  },
 
-    const results = allPatents.map(patent => {
-      const similarityResult = calculateOverallSimilarity(invention, patent);
-      return {
-        ...patent,
-        similarity: similarityResult
-      };
+  // Retrieve all patents in the database directly
+  async getAllPatents() {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/patents`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      console.error("Failed to fetch patent collection:", e);
+      return [];
+    }
+  },
+
+  // Orchestrated analysis fetch (NLP + FAISS + Compare)
+  async analyzeInventionFull(inventionObj, thresholdVal = 15) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    const res = await fetch(`${API_BASE}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        title: inventionObj.title,
+        description: inventionObj.description,
+        domain: inventionObj.domain,
+        components: inventionObj.components,
+        functions: inventionObj.functions,
+        keywords: inventionObj.keywords
+      })
     });
     
-    const matched = results
-      .filter(p => p.similarity.overallScore >= thresholdScore)
-      .sort((a, b) => b.similarity.overallScore - a.similarity.overallScore);
-
-    return matched;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to analyze invention.");
+    return data;
   },
 
-  getAllPatents() {
-    return getActivePatents();
-  },
-
-  savePatent(newPatent) {
-    const patents = getActivePatents();
-    const existingIdx = patents.findIndex(p => p.patentNumber === newPatent.patentNumber);
-    
-    if (existingIdx !== -1) {
-      patents[existingIdx] = { ...patents[existingIdx], ...newPatent };
-    } else {
-      const generatedId = `pat-${Date.now()}`;
-      patents.push({ id: generatedId, ...newPatent });
+  // History management
+  async getSearchHistory(userEmail) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/history`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      return [];
     }
-    
-    localStorage.setItem(CUSTOM_PATENTS_KEY, JSON.stringify(patents));
-    return true;
   },
 
-  deletePatent(patentId) {
-    const patents = getActivePatents();
-    const filtered = patents.filter(p => p.id !== patentId);
-    localStorage.setItem(CUSTOM_PATENTS_KEY, JSON.stringify(filtered));
-    return true;
-  },
-
-  resetPatentsDatabase() {
-    localStorage.setItem(CUSTOM_PATENTS_KEY, JSON.stringify(initialPatents));
-    return true;
-  },
-
-  /**
-   * MODULE 14: Search History Archives (with individual item deletion & re-run support)
-   */
-  getSearchHistory(userEmail) {
-    const history = localStorage.getItem(SEARCH_HISTORY_KEY);
-    if (!history) return [];
-    
-    const allLogs = JSON.parse(history);
-    return allLogs.filter(log => log.userEmail === userEmail).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  },
-
-  addSearchHistory(userEmail, invention, matchCount, topScore, userName = "") {
-    const history = localStorage.getItem(SEARCH_HISTORY_KEY) ? JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)) : [];
-    
-    const logEntry = {
-      id: `log-${Date.now()}`,
-      userEmail,
-      userName,
-      title: invention.title,
-      description: invention.description,
-      domain: invention.domain,
-      components: invention.components,
-      functions: invention.functions,
-      keywords: invention.keywords || [],
-      matchCount,
-      topScore,
-      timestamp: new Date().toISOString()
-    };
-    
-    history.push(logEntry);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
-    return logEntry;
-  },
-
-  deleteSearchHistoryItem(userEmail, logId) {
-    const history = localStorage.getItem(SEARCH_HISTORY_KEY);
-    if (!history) return;
-    
-    const allLogs = JSON.parse(history);
-    const filtered = allLogs.filter(log => !(log.userEmail === userEmail && log.id === logId));
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
-  },
-
-  clearSearchHistory(userEmail) {
-    const history = localStorage.getItem(SEARCH_HISTORY_KEY);
-    if (!history) return;
-    
-    const allLogs = JSON.parse(history);
-    const filtered = allLogs.filter(log => log.userEmail !== userEmail);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
-  },
-
-  getSavedPatents(userEmail) {
-    const saved = localStorage.getItem(SAVED_PATENTS_KEY);
-    if (!saved) return [];
-    
-    const allSaved = JSON.parse(saved);
-    const userSavedIds = allSaved[userEmail] || [];
-    
-    const patents = getActivePatents();
-    return patents.filter(p => userSavedIds.includes(p.id));
-  },
-
-  toggleSavePatent(userEmail, patentId) {
-    const savedStr = localStorage.getItem(SAVED_PATENTS_KEY);
-    const allSaved = savedStr ? JSON.parse(savedStr) : {};
-    
-    if (!allSaved[userEmail]) {
-      allSaved[userEmail] = [];
+  async deleteSearchHistoryItem(userEmail, logId) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      await fetch(`${API_BASE}/history/${logId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+    } catch (e) {
+      console.error(e);
     }
-    
-    const idx = allSaved[userEmail].indexOf(patentId);
-    let isSaved = false;
-    
-    if (idx !== -1) {
-      allSaved[userEmail].splice(idx, 1);
-    } else {
-      allSaved[userEmail].push(patentId);
-      isSaved = true;
-    }
-    
-    localStorage.setItem(SAVED_PATENTS_KEY, JSON.stringify(allSaved));
-    return isSaved;
   },
 
-  isPatentSaved(userEmail, patentId) {
-    const savedStr = localStorage.getItem(SAVED_PATENTS_KEY);
-    if (!savedStr) return false;
-    
-    const allSaved = JSON.parse(savedStr);
-    const userSavedIds = allSaved[userEmail] || [];
-    return userSavedIds.includes(patentId);
+  // Bookmark management
+  async getSavedPatentIds(userEmail) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/saved`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async getSavedPatents(userEmail) {
+    try {
+      const allPatents = await this.getAllPatents();
+      const savedIds = await this.getSavedPatentIds(userEmail);
+      return allPatents.filter(p => savedIds.includes(p.id));
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async toggleSavePatent(userEmail, patentId) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/save-patent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ patentId })
+      });
+      const data = await res.json();
+      return data.isSaved;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async isPatentSaved(userEmail, patentId) {
+    const list = await this.getSavedPatentIds(userEmail);
+    return list.includes(patentId);
+  },
+
+  // Dynamic LLM comparison explanation
+  async getExplanation(invention, patent) {
+    const token = localStorage.getItem("patent_assistant_session")
+      ? JSON.parse(localStorage.getItem("patent_assistant_session")).token
+      : "";
+      
+    try {
+      const res = await fetch(`${API_BASE}/explain`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ invention, patent })
+      });
+      if (!res.ok) return "Failed to generate AI explanation.";
+      const data = await res.json();
+      return data.explanation;
+    } catch (e) {
+      return "Failed to generate AI explanation.";
+    }
   }
 };
+export default searchService;

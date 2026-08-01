@@ -15,7 +15,7 @@ export function PreprocessingPipeline() {
   return (
     <Card style={{ marginBottom: "1.5rem" }}>
       <h4 style={{ color: "#fff", fontSize: "1rem", marginBottom: "1rem", textAlign: "left" }}>
-        MODULE 6: Patent Document Preprocessing Pipeline
+        Patent Document Preprocessing Pipeline
       </h4>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem" }}>
         {steps.map((step, idx) => (

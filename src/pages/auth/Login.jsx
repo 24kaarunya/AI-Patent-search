@@ -16,7 +16,7 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setErrors({});
     setApiError("");
@@ -34,7 +34,7 @@ export function Login() {
 
     setLoading(true);
     try {
-      const user = authService.login(email, password);
+      const user = await authService.login(email, password);
       if (user && user.role === "Admin") {
         navigate("/admin");
       } else {

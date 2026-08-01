@@ -20,26 +20,29 @@ export function ResearchWorkspace() {
   const [selectedComparePatent, setSelectedComparePatent] = useState(null);
 
   useEffect(() => {
-    if (currentUser) {
-      const logs = searchService.getSearchHistory(currentUser.email);
-      setHistory(logs);
+    async function loadWorkspaceData() {
+      if (currentUser) {
+        const logs = await searchService.getSearchHistory(currentUser.email);
+        setHistory(logs);
 
-      // Check if routed with a preloaded invention
-      if (location.state && location.state.loadedInvention) {
-        loadInvention(location.state.loadedInvention);
-      } else if (logs.length > 0) {
-        // Default to loading the latest query
-        loadInvention(logs[0]);
+        // Check if routed with a preloaded invention
+        if (location.state && location.state.loadedInvention) {
+          await loadInvention(location.state.loadedInvention);
+        } else if (logs.length > 0) {
+          // Default to loading the latest query
+          await loadInvention(logs[0]);
+        }
       }
     }
+    loadWorkspaceData();
   }, [currentUser, location]);
 
-  const loadInvention = (invention) => {
+  const loadInvention = async (invention) => {
     setActiveInvention(invention);
     
     // Perform similarity lookup to retrieve matched patents
     const thresholdVal = parseInt(localStorage.getItem("patent_search_threshold") || "15", 10);
-    const matches = searchService.searchPatents(invention, thresholdVal);
+    const matches = await searchService.searchPatents(invention, thresholdVal);
     setMatchedPatents(matches);
     
     // Auto-select top match if exists

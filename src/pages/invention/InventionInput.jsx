@@ -96,10 +96,13 @@ export function InventionInput() {
   }, [location]);
 
   useEffect(() => {
-    if (currentUser) {
-      const saved = searchService.getSavedPatents(currentUser.email).map(p => p.id);
-      setSavedPatentsIds(saved);
+    async function loadSavedIds() {
+      if (currentUser) {
+        const saved = await searchService.getSavedPatentIds(currentUser.email);
+        setSavedPatentsIds(saved);
+      }
     }
+    loadSavedIds();
   }, [currentUser, mode]);
 
   const handleVoiceToggle = () => {
@@ -199,53 +202,36 @@ export function InventionInput() {
     }
 
     setMode("loading");
-    setLoaderMessage("Converting invention text into Sentence Transformer (384-dim) vector representations...");
+    setLoaderMessage("Converting invention text, querying real-time patent registers, and executing FAISS semantic matching...");
 
     try {
-      const parsedAnalysis = await aiService.analyzeInvention(activeTitle, activeDescription, activeDomain);
-      setLoaderMessage("Executing FAISS vector index search & TF-IDF hybrid matching...");
-      
       const thresholdVal = parseInt(localStorage.getItem("patent_search_threshold") || "15", 10);
-
       const inventionObj = {
         title: activeTitle,
         description: activeDescription,
-        domain: parsedAnalysis.domain,
+        domain: activeDomain,
         components: activeComponents,
         functions: activeFunctions,
         keywords: activeKeywords
       };
       
-      const searchResults = searchService.searchPatents(inventionObj, thresholdVal);
-      setLoaderMessage("Assessing novelty differences & structural gaps...");
-
-      const noveltyResult = aiService.analyzeNovelty(inventionObj, searchResults);
-
-      if (currentUser && !loadedInv) {
-        searchService.addSearchHistory(
-          currentUser.email,
-          inventionObj,
-          searchResults.length,
-          searchResults[0] ? searchResults[0].similarity.overallScore : 0,
-          currentUser.name
-        );
-      }
-
-      setNlpAnalysis(parsedAnalysis);
-      setNoveltyAnalysis(noveltyResult);
-      setMatchedPatents(searchResults);
+      const response = await searchService.analyzeInventionFull(inventionObj, thresholdVal);
+      
+      setNlpAnalysis(response.analysis);
+      setNoveltyAnalysis(response.novelty);
+      setMatchedPatents(response.patents);
       setMode("results");
     } catch (err) {
       console.error(err);
       setMode("edit");
-      setErrors({ global: "An error occurred during AI analysis. Please try again." });
+      setErrors({ global: "An error occurred during backend AI analysis: " + err.message });
     }
   };
 
-  const handleToggleSavePatent = (patentId) => {
+  const handleToggleSavePatent = async (patentId) => {
     if (currentUser) {
-      searchService.toggleSavePatent(currentUser.email, patentId);
-      const saved = searchService.getSavedPatents(currentUser.email).map(p => p.id);
+      await searchService.toggleSavePatent(currentUser.email, patentId);
+      const saved = await searchService.getSavedPatentIds(currentUser.email);
       setSavedPatentsIds(saved);
     }
   };

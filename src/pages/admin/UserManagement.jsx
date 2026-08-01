@@ -21,16 +21,27 @@ export function UserManagement() {
 
   useEffect(() => { loadUsers(); }, []);
 
-  const loadUsers = () => {
-    const raw = authService.getAllUsers();
-    // Exclude Admins from the registered users list
-    const regularUsers = raw.filter(u => u.role !== "Admin");
-    const withStats = regularUsers.map(u => ({
-      ...u,
-      searchCount: searchService.getSearchHistory(u.email).length,
-      status: u.status || "Active",
-    }));
-    setUsers(withStats);
+  const loadUsers = async () => {
+    try {
+      const raw = await authService.getAllUsers();
+      const regularUsers = raw.filter(u => u.role !== "Admin");
+      const withStats = await Promise.all(regularUsers.map(async u => {
+        let historyList = [];
+        try {
+          historyList = await searchService.getSearchHistory(u.email);
+        } catch (e) {
+          historyList = [];
+        }
+        return {
+          ...u,
+          searchCount: historyList.length,
+          status: u.status || "Active",
+        };
+      }));
+      setUsers(withStats);
+    } catch (err) {
+      console.error("Failed to load users", err);
+    }
   };
 
   const flash = (msg) => {
@@ -38,47 +49,51 @@ export function UserManagement() {
     setTimeout(() => setSuccessMsg(""), 3000);
   };
 
-  const handleToggleRole = (email, currentRole) => {
+  const handleToggleRole = async (email, currentRole) => {
     if (activeAdminUser && email.toLowerCase() === activeAdminUser.email.toLowerCase()) {
       alert("Cannot change your own role while logged in.");
       return;
     }
     const nextRole = currentRole === "Admin" ? "User" : "Admin";
     if (window.confirm(`Change role for ${email} to ${nextRole}?`)) {
-      authService.updateUserRole(email, nextRole);
-      flash(`Role for ${email} updated to ${nextRole}.`);
-      loadUsers();
+      try {
+        await authService.updateUserRole(email, nextRole);
+        flash(`Role for ${email} updated to ${nextRole}.`);
+        loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
     }
   };
 
-  const handleToggleStatus = (email, currentStatus) => {
+  const handleToggleStatus = async (email, currentStatus) => {
     if (activeAdminUser && email.toLowerCase() === activeAdminUser.email.toLowerCase()) {
       alert("Cannot deactivate your own account.");
       return;
     }
     const nextStatus = currentStatus === "Active" ? "Inactive" : "Active";
-    // Update status in storage via a simple patch
-    const raw = JSON.parse(localStorage.getItem("patent_assistant_users") || "[]");
-    const idx = raw.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (idx !== -1) {
-      raw[idx].status = nextStatus;
-      localStorage.setItem("patent_assistant_users", JSON.stringify(raw));
+    try {
+      await authService.updateUserStatus(email, nextStatus);
+      flash(`Account ${email} ${nextStatus === "Active" ? "activated" : "deactivated"}.`);
+      loadUsers();
+    } catch (err) {
+      alert(err.message);
     }
-    flash(`Account ${email} ${nextStatus === "Active" ? "activated" : "deactivated"}.`);
-    loadUsers();
   };
 
-  const handleDelete = (email) => {
+  const handleDelete = async (email) => {
     if (activeAdminUser && email.toLowerCase() === activeAdminUser.email.toLowerCase()) {
       alert("Cannot delete your own admin account.");
       return;
     }
     if (window.confirm(`Permanently delete account for ${email}? This cannot be undone.`)) {
-      const raw = JSON.parse(localStorage.getItem("patent_assistant_users") || "[]");
-      const filtered = raw.filter(u => u.email.toLowerCase() !== email.toLowerCase());
-      localStorage.setItem("patent_assistant_users", JSON.stringify(filtered));
-      flash(`User ${email} deleted.`);
-      loadUsers();
+      try {
+        await authService.deleteUser(email);
+        flash(`User ${email} deleted.`);
+        loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
     }
   };
 

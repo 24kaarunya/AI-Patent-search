@@ -20,18 +20,27 @@ export function Dashboard() {
   const [history, setHistory] = useState([]);
   const [patents, setPatents] = useState([]);
   const [savedPatents, setSavedPatents] = useState([]);
+  const [totalSearches, setTotalSearches] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser) {
-      const logs = searchService.getSearchHistory(currentUser.email);
-      setHistory(logs.slice(0, 4));
-      setPatents(patentService.getPatents());
-      setSavedPatents(searchService.getSavedPatents(currentUser.email));
+    async function loadDashboardData() {
+      if (currentUser) {
+        const logs = await searchService.getSearchHistory(currentUser.email);
+        setHistory(logs.slice(0, 4));
+        setTotalSearches(logs.length);
+        
+        // Fetch patents list from backend
+        const allPatents = await searchService.getAllPatents();
+        setPatents(allPatents);
+        
+        const saved = await searchService.getSavedPatents(currentUser.email);
+        setSavedPatents(saved);
+      }
     }
+    loadDashboardData();
   }, [currentUser]);
 
-  const totalSearches = searchService.getSearchHistory(currentUser?.email || "").length;
   const avgScore = history.length > 0
     ? Math.round(history.reduce((s, l) => s + (l.topScore || 0), 0) / history.length)
     : 0;
@@ -226,12 +235,12 @@ export function Dashboard() {
               {[
                 { source: "USPTO (United States)", count: patents.filter(p => p.source === "USPTO").length },
                 { source: "EPO (European)", count: patents.filter(p => p.source === "EPO").length },
-                { source: "WIPO (Global)", count: 0, pending: true },
+                { source: "WIPO (Global)", count: patents.filter(p => p.source === "WIPO").length },
               ].map((s, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "0.4rem 0", borderBottom: i < 2 ? "1px solid rgba(255,255,255,0.03)" : "none" }}>
                   <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>{s.source}</span>
-                  <span style={{ fontSize: "0.82rem", fontWeight: 700, color: s.pending ? "var(--text-muted)" : "#fff" }}>
-                    {s.pending ? "Pending" : `${s.count} Patents`}
+                  <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#fff" }}>
+                    {s.count} Patents
                   </span>
                 </div>
               ))}

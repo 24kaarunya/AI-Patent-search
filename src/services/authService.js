@@ -1,99 +1,35 @@
-// Simple key for storing user lists and active sessions
-const USERS_KEY = "patent_assistant_users";
+const API_BASE = window.location.origin.includes("localhost:5173") ? "http://localhost:5000/api/auth" : "/api/auth";
 const SESSION_KEY = "patent_assistant_session";
 
-// Base64 encoding mock for password hash
-function mockHash(password) {
-  return btoa(password.split("").reverse().join(""));
-}
-
-/**
- * Initialize default credentials in localStorage
- */
-export function initAuthDatabase() {
-  const users = localStorage.getItem(USERS_KEY);
-  if (!users) {
-    const defaultUsers = [
-      {
-        email: "admin@patentai.com",
-        passwordHash: mockHash("Admin@123"),
-        name: "Director Alexander",
-        role: "Admin",
-        created: new Date("2026-01-10").toISOString(),
-        bio: "Principal patent compliance administrator."
-      },
-      {
-        email: "user@patentai.com",
-        passwordHash: mockHash("User@1234"),
-        name: "Dr. Jane Doe",
-        role: "User",
-        created: new Date("2026-02-15").toISOString(),
-        bio: "Senior IoT & Embedded Systems researcher."
-      }
-    ];
-    localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers));
-  }
-}
-
 export const authService = {
-  register(name, email, password) {
-    initAuthDatabase();
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
+  async register(name, email, password) {
+    const res = await fetch(`${API_BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password })
+    });
     
-    if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error("A user with this email address already exists.");
-    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Registration failed.");
     
-    const newUser = {
-      email: email.toLowerCase(),
-      passwordHash: mockHash(password),
-      name,
-      role: "User", // default role
-      created: new Date().toISOString(),
-      bio: "R&D Inventor"
-    };
-    
-    users.push(newUser);
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    return this.login(email, password);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    window.dispatchEvent(new Event("auth-change"));
+    return data.user;
   },
 
-  login(email, password) {
-    initAuthDatabase();
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  async login(email, password) {
+    const res = await fetch(`${API_BASE}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
     
-    if (!user) {
-      throw new Error("Invalid email or password.");
-    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Login failed.");
     
-    if (user.passwordHash !== mockHash(password)) {
-      throw new Error("Invalid email or password.");
-    }
-    
-    // Simulate JWT Generation (mock token contains basic info signed in base64)
-    const tokenPayload = {
-      email: user.email,
-      role: user.role,
-      exp: Date.now() + 2 * 60 * 60 * 1000 // 2 hour expiration
-    };
-    const mockToken = btoa(JSON.stringify(tokenPayload));
-    
-    const session = {
-      token: mockToken,
-      user: {
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        bio: user.bio,
-        created: user.created
-      }
-    };
-    
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    // Dispatch custom storage event for header status refreshes
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
     window.dispatchEvent(new Event("auth-change"));
-    return session.user;
+    return data.user;
   },
 
   logout() {
@@ -104,90 +40,116 @@ export const authService = {
   getCurrentUser() {
     const sessionStr = localStorage.getItem(SESSION_KEY);
     if (!sessionStr) return null;
-    
     try {
       const session = JSON.parse(sessionStr);
-      // Validate mock JWT token expiration
-      const payload = JSON.parse(atob(session.token));
-      if (payload.exp < Date.now()) {
-        this.logout();
-        return null;
-      }
-      return session.user;
+      return session.user || null;
     } catch (e) {
-      this.logout();
       return null;
     }
   },
 
-  resetPassword(email, newPassword) {
-    initAuthDatabase();
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
-    const userIdx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (userIdx === -1) {
-      throw new Error("No account associated with this email address was found.");
+  getToken() {
+    const sessionStr = localStorage.getItem(SESSION_KEY);
+    if (!sessionStr) return null;
+    try {
+      return JSON.parse(sessionStr).token || null;
+    } catch (e) {
+      return null;
     }
+  },
+
+  async updateProfile(name, bio) {
+    const token = this.getToken();
+    if (!token) throw new Error("Unauthorized.");
     
-    users[userIdx].passwordHash = mockHash(newPassword);
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    const res = await fetch(`${API_BASE}/profile/update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ name, bio })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to update profile.");
+    
+    const sessionStr = localStorage.getItem(SESSION_KEY);
+    if (sessionStr) {
+      const session = JSON.parse(sessionStr);
+      session.user = { ...session.user, name: data.user.name, bio: data.user.bio };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      window.dispatchEvent(new Event("auth-change"));
+    }
+    return data.user;
+  },
+
+  async getAllUsers() {
+    const token = this.getToken();
+    if (!token) throw new Error("Unauthorized.");
+    
+    const res = await fetch(`${API_BASE}/users`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to fetch users.");
+    return data;
+  },
+
+  async updateUserRole(email, newRole) {
+    const token = this.getToken();
+    if (!token) throw new Error("Unauthorized.");
+    
+    const res = await fetch(`${API_BASE}/users/role`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ email, role: newRole })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to update role.");
     return true;
   },
 
-  updateProfile(name, bio) {
-    const currentUser = this.getCurrentUser();
-    if (!currentUser) throw new Error("Unauthorized access.");
+  async updateUserStatus(email, newStatus) {
+    const token = this.getToken();
+    if (!token) throw new Error("Unauthorized.");
     
-    initAuthDatabase();
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
-    const userIdx = users.findIndex(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+    const res = await fetch(`${API_BASE}/users/status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ email, status: newStatus })
+    });
     
-    if (userIdx !== -1) {
-      users[userIdx].name = name;
-      users[userIdx].bio = bio;
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
-      
-      // Update session storage
-      const session = JSON.parse(localStorage.getItem(SESSION_KEY));
-      session.user.name = name;
-      session.user.bio = bio;
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      window.dispatchEvent(new Event("auth-change"));
-    }
-    
-    return this.getCurrentUser();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to update status.");
+    return true;
   },
 
-  getAllUsers() {
-    initAuthDatabase();
-    return JSON.parse(localStorage.getItem(USERS_KEY)).map(u => ({
-      email: u.email,
-      name: u.name,
-      role: u.role,
-      created: u.created,
-      bio: u.bio
-    }));
+  async deleteUser(email) {
+    const token = this.getToken();
+    if (!token) throw new Error("Unauthorized.");
+    
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(email)}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to delete user.");
+    return true;
   },
 
-  updateUserRole(email, newRole) {
-    initAuthDatabase();
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
-    const userIdx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (userIdx === -1) throw new Error("User not found.");
-    
-    users[userIdx].role = newRole;
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    
-    // If updating own role, sync session
-    const currentUser = this.getCurrentUser();
-    if (currentUser && currentUser.email.toLowerCase() === email.toLowerCase()) {
-      const session = JSON.parse(localStorage.getItem(SESSION_KEY));
-      session.user.role = newRole;
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      window.dispatchEvent(new Event("auth-change"));
-    }
-    
+  async resetPassword(email, newPassword) {
+    // Static mock reset helper
     return true;
   }
 };
+export default authService;

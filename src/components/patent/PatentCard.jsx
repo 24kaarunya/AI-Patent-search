@@ -92,8 +92,8 @@ export function PatentCard({ patent, isSaved, onToggleSave = () => {}, onViewDet
         {/* Right Side: Score circle and action buttons */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem", minWidth: "130px" }}>
           <SimilarityScore 
-            score={patent.similarity.overallScore} 
-            variant={getScoreVariant(patent.similarity.overallScore)}
+            score={patent.similarity?.overallScore || 0} 
+            variant={getScoreVariant(patent.similarity?.overallScore || 0)}
           />
           
           <div style={{ display: "flex", gap: "0.5rem", width: "100%" }}>

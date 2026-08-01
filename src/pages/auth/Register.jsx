@@ -18,7 +18,7 @@ export function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setErrors({});
     setApiError("");
@@ -44,7 +44,7 @@ export function Register() {
 
     setLoading(true);
     try {
-      authService.register(name, email, password);
+      await authService.register(name, email, password);
       navigate("/dashboard");
     } catch (err) {
       setApiError(err.message || "Failed to create user account. Try another email.");
